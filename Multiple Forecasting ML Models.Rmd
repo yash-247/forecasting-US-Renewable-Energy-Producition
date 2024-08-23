@@ -1,0 +1,308 @@
+---
+title: "CIA2-BF  2327664"
+author: "YASH KAUSHAL"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(forecast)
+library(tseries)
+library(readxl)
+```
+
+```{r}
+elec<-read_xlsx("D:\\sem4\\Time Series Forecasting\\US Electricity.xlsx")
+head(elec)
+tail(elec)
+sum(is.na(elec))
+```
+```{r}
+elec.ts<-ts(elec$`Total Renewable Energy Production`,start=c(1973,1),end=c(2024,03),frequency=12)
+head(elec.ts,50)
+autoplot(elec.ts)
+ggseasonplot(elec.ts)
+ggsubseriesplot(elec.ts)
+```
+
+```{r}
+elec_window<-window(elec.ts,start=c(2015,1),end=c(2024,3))
+autoplot(elec_window)
+elec_train<-window(elec.ts,start=c(2015,1),end=c(2023,9))
+elec_test<-window(elec.ts,start=c(2023,10),end=c(2024,3))
+str(elec_train)
+str(elec_test)
+str(elec_window)
+```
+
+```{r}
+autoplot(elec_train) +
+  autolayer(meanf(elec_train, h=9),
+            series="Mean", PI=FALSE) +
+  autolayer(naive(elec_train, h=9),
+            series="Naïve", PI=FALSE) +
+  autolayer(snaive(elec_train, h=9),
+            series="Seasonal naïve", PI=FALSE) +
+  ggtitle("Forecasts for monthly renewable energy production") +
+  xlab("Year") + ylab("Energy in Quadrillion Btu") +
+  guides(colour=guide_legend(title="Forecast"))
+```
+
+```{r}
+meanf_forecast <- meanf(elec_train, h=9)
+naive_forecast <- naive(elec_train, h=9)
+snaive_forecast <- snaive(elec_train, h=9)
+
+meanf_accuracy <- accuracy(meanf_forecast, elec_test)
+naive_accuracy <- accuracy(naive_forecast, elec_test)
+snaive_accuracy <- accuracy(snaive_forecast, elec_test)
+
+# Print accuracy metrics
+meanf_accuracy
+naive_accuracy
+snaive_accuracy
+
+```
+
+```{r}
+autoplot(decompose(elec_window))
+acf(elec_window)
+pacf(elec_window)
+adf.test(elec_window)
+```
+
+```{r}
+elec_diff<-diff(elec_window)
+autoplot(elec_diff)
+acf(elec_diff)
+pacf(elec_diff)
+adf.test(elec_diff)
+```
+
+```{r}
+elec_train<-window(elec_window,start=c(2015,1),end=c(2023,9))
+elec_test<-window(elec_window,start=c(2023,10),end=c(2024,3))
+str(elec_test)
+str(elec_train)
+str(elec_window)
+pacf(elec_train)
+```
+```{r}
+model2<-arima(elec_train,order=c(1,0,3))
+summary(model2)
+checkresiduals(model2)
+autoplot(forecast(model2,h=9)) +
+  autolayer(elec_test, series="Test Data") +
+  ggtitle("ARIMA Model Forecasts") +
+  xlab("Year") + ylab("Differenced Energy in Quadrillion Btu") +
+  guides(colour=guide_legend(title="Forecast"))
+```
+
+```{r}
+auto.arima(elec_train,ic="aic",trace=FALSE)
+auto.arima(elec_train,stepwise=TRUE, approximation=FALSE,ic="bic",trace=FALSE,seasonal = TRUE)
+```
+
+```{r}
+#Fit the best model to the training data
+best_model <- Arima(elec_train, order=c(1,0,2), seasonal=list(order=c(0,1,2), period=12))
+summary(best_model)
+acf(ts(best_model$residuals))
+#print(best_model$residuals)
+checkresiduals(best_model)
+```
+
+```{r}
+# Generate forecasts for the test period
+forecasts <- forecast(best_model, h=length(elec_test))
+
+# Plot the forecasts against the actual test data
+autoplot(forecast(best_model,h=9)) +
+  autolayer(elec_test, series="Test Data") +
+  ggtitle("ARIMA Model Forecasts") +
+  xlab("Year") + ylab("Differenced Energy in Quadrillion Btu") +
+  guides(colour=guide_legend(title="Forecast"))
+
+# Calculate accuracy metrics for the forecasts
+accuracy_metrics <- accuracy(forecasts, elec_test)
+print(accuracy_metrics)
+```
+
+```{r}
+Box.test(forecasts$residuals, lag=5, type="Ljung-Box")
+Box.test(forecasts$residuals, lag=10, type="Ljung-Box")
+Box.test(forecasts$residuals, lag=15, type="Ljung-Box")
+```
+
+```{r}
+smodel <- Arima(elec_train, order=c(1,0,1), seasonal=list(order=c(1,0,2), period=12))
+summary(smodel)
+acf(ts(smodel$residuals))
+checkresiduals(smodel)
+```
+```{r}
+sforecast <- forecast(smodel, h=length(elec_test))
+
+# Plot the forecasts against the actual test data
+autoplot(forecast(smodel,h=9),series="Forecasted Data") +
+  autolayer(elec_test, series="Test Data") +
+  ggtitle("SARIMA Model Forecasts") +
+  xlab("Year") + ylab("Differenced Energy in Quadrillion Btu") +
+  guides(colour=guide_legend(title="Forecast"))
+
+# Calculate accuracy metrics for the forecasts
+saccuracy_metric <- accuracy(sforecast, elec_test)
+print(saccuracy_metric)
+
+```
+
+```{r}
+#Box test
+Box.test(sforecast$residuals, lag=5, type="Ljung-Box")
+Box.test(sforecast$residuals, lag=10, type="Ljung-Box")
+Box.test(sforecast$residuals, lag=15, type="Ljung-Box")
+```
+
+```{r}
+# Exponential Smoothing
+exp_smoothing_model <- ets(elec_train)
+exp_smoothing_forecast <- forecast(exp_smoothing_model, h=length(elec_test))
+summary(exp_smoothing_model)
+# Plotting
+autoplot(forecast(exp_smoothing_model, h=9)) +
+  autolayer(elec_test, series="Test Data") +
+  ggtitle("Exponential Smoothing Forecasts") +
+  xlab("Year") + ylab("Energy in Quadrillion Btu") +
+  guides(colour=guide_legend(title="Forecast"))
+
+# Accuracy Metrics
+exp_smoothing_accuracy <- accuracy(exp_smoothing_forecast, elec_test)
+print(exp_smoothing_accuracy)
+```
+
+```{r}
+# Holt-Winters Exponential Smoothing
+holt_winters_model <- hw(elec_train, seasonal="multiplicative")
+holt_winters_forecast <- forecast(holt_winters_model, h=length(elec_test))
+summary(holt_winters_model)
+# Plotting
+autoplot(forecast(holt_winters_model, h=9)) +
+  autolayer(elec_test, series="Test Data") +
+  ggtitle("Holt-Winters Forecasts") +
+  xlab("Year") + ylab("Energy in Quadrillion Btu") +
+  guides(colour=guide_legend(title="Forecast"))
+
+# Accuracy Metrics
+holt_winters_accuracy <- accuracy(holt_winters_forecast, elec_test)
+print(holt_winters_accuracy)
+```
+
+```{r}
+zzz_model <- ets(elec_train, model="ZZZ")
+summary(zzz_model)
+zzz_forecast <- forecast(zzz_model, h=length(elec_test))
+autoplot(forecast(zzz_model, h=9))+autolayer(elec_test,series="Test Data")
+zzz_accuracy <- accuracy(zzz_forecast, elec_test)
+print(zzz_accuracy)
+```
+
+```{r}
+#predicting using ARIMA
+smodel1 <- Arima(elec_window, order=c(1,0,1), seasonal=list(order=c(1,0,2), period=12))
+forecast(smodel1,h=6)
+autoplot(forecast(smodel1,h=6))+ggtitle("SARIMA Model(1,0,1),[1,0,2] Forecasts") +
+  xlab("Year") + ylab("Differenced Energy in Quadrillion Btu") +
+  guides(colour=guide_legend(title="Forecast"))
+```
+
+```{r}
+ana_model <- ets(elec_train, model="AAN")
+summary(ana_model)
+
+# Forecast using ETS(A,N,A) model
+ana_forecast <- forecast(ana_model, h=length(elec_test))
+
+# Plot the forecast
+autoplot(ana_forecast) + 
+  autolayer(elec_test, series="Test Data")
+
+# Accuracy of the forecast
+ana_accuracy <- accuracy(ana_forecast, elec_test)
+print(ana_accuracy)
+```
+
+```{r}
+# Fit ETS(A,N,N) model
+ann_model <- ets(elec_train, model="MMM")
+summary(ann_model)
+
+# Forecast using ETS(A,N,N) model
+ann_forecast <- forecast(ann_model, h=length(elec_test))
+
+# Plot the forecast
+autoplot(forecast(ann_model, h=9)) + 
+  autolayer(elec_test, series="Test Data")
+
+# Accuracy of the forecast
+ann_accuracy <- accuracy(ann_forecast, elec_test)
+print(ann_accuracy)
+```
+
+```{r}
+# Fit ETS(M,A,N) model
+man_model <- ets(elec_train, model="MAN")
+summary(man_model)
+
+# Forecast using ETS(M,A,N) model
+man_forecast <- forecast(man_model, h=length(elec_test))
+
+# Plot the forecast
+autoplot(man_forecast) + 
+  autolayer(elec_test, series="Test Data")
+
+# Accuracy of the forecast
+man_accuracy <- accuracy(man_forecast, elec_test)
+print(man_accuracy)
+```
+
+```{r}
+# Fit ETS(A,A,N) model
+aan_model <- ets(elec_train, model="AAN")
+summary(aan_model)
+
+# Forecast using ETS(A,A,N) model
+aan_forecast <- forecast(aan_model, h=length(elec_test))
+
+# Plot the forecast
+autoplot(aan_forecast) + 
+  autolayer(elec_test, series="Test Data")
+
+# Accuracy of the forecast
+aan_accuracy <- accuracy(aan_forecast, elec_test)
+print(aan_accuracy)
+
+```
+
+```{r}
+
+library(prophet)
+
+# Prepare the data
+elec_prophet <- data.frame(ds = as.Date(elec$Time), y = elec$`Total Renewable Energy Production`)
+
+# Fit the model
+prophet_model <- prophet(elec_prophet)
+summary(prophet_model)
+
+# Make future dataframe
+future <- make_future_dataframe(prophet_model, periods = 12, freq = 'month')
+# Predict
+forecast <- predict(prophet_model, future)
+tail(forecast,15)
+# Plot forecast
+plot(prophet_model, forecast)
+prophet_plot_components(prophet_model, forecast)
+
+```
